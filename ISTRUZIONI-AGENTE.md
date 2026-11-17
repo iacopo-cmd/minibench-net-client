@@ -12,6 +12,13 @@ Quello che ti serve:
 3. la **chiave** della macchina (una riga di testo): te la diamo NOI, per un canale a parte, quando la chiedi al passo 3;
 4. se serve: nome, provider, piano e minuti da evitare (chiedili prima di cominciare).
 
+## Come comunicare con noi
+
+- PRIMA di agire, di' cosa stai per fare (quali passi e quali comandi), poi fallo.
+- Lavora e scrivi a BLOCCHI: al massimo 3 o 4 operazioni per messaggio. Dopo ogni blocco manda un messaggio con
+  cosa hai fatto, l'esito e cosa farai nel blocco dopo. Non restare in silenzio fino alla fine.
+- Se ti fermi (errore, dubbio, attesa della chiave), dillo subito in un messaggio: non aspettare.
+
 ## Regole
 
 - La chiave è un SEGRETO. Non stamparla, non scriverla nei log, nella chat, nella memoria o in file diversi da
