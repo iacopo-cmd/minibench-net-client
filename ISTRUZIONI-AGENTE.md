@@ -30,19 +30,18 @@ Quello che ti serve:
 - Se sulla macchina c'è già un altro benchmark a orari fissi, chiedi i minuti da mettere in `TEST_EVITA_MINUTI`
   prima di accendere il client: due benchmark insieme si falsano a vicenda.
 
-## 1. Controlli prima di cominciare
+## 1. Controlli prima di cominciare: il client bussa al server
+
+Scarica i due repo (vedi passo 2, solo i `git clone`) e lancia la verifica PRIMA di installare:
 
 ```bash
-id -u                                   # deve essere 0 (root)
-python3 --version                       # 3.9 o più recente
-for c in openssl ping findmnt ip; do command -v $c >/dev/null || echo "MANCA: $c"; done
-command -v traceroute >/dev/null || command -v tracepath >/dev/null || echo "MANCA: traceroute (consigliato)"
-systemctl --version | head -1           # serve systemd
-systemctl is-active minibench-net.service 2>/dev/null   # se dice «active» il client c'è già: fermati e chiedi
+python3 -I minibench-net-client/minibench-net.py --verifica --prima
 ```
 
-Se manca qualcosa, riportalo. Su Debian e Ubuntu di solito basta `apt install python3 openssl iputils-ping traceroute`,
-ma installalo **solo** se te lo diciamo noi.
+Controlla root, systemd, che non sia un container, programmi, cartelle, che il server risponda e che il client non
+ci sia già. Se l'ultima riga dice **FERMO**, fermati e riportaci le righe con `NO`. Non provare a aggirarle.
+Se mancano programmi, su Debian e Ubuntu di solito basta `apt install python3 openssl iputils-ping traceroute`,
+ma installali **solo** se te lo diciamo noi. `installa.sh` rifà la stessa verifica e non installa niente se è FERMO.
 
 ## 2. Scarica e installa
 
@@ -90,11 +89,15 @@ Facoltativi, solo se te li diamo noi: `NOME_HOST`, `PROVIDER`, `TIPO_HOSTING` (p
 Tutto è NASCOSTO sulla pagina pubblica finché il campo non è elencato in `PUBBLICI`: lascia `PUBBLICI=` vuoto se non
 ti diciamo altro. Lascia vuoti gli `OGNI_*`: gli intervalli li decide il server.
 
-## 5. Prova senza mandare niente
+## 5. Verifica completa e prova senza mandare niente
 
 ```bash
+python3 -I /opt/minibench-net/minibench-net.py --verifica                # deve finire con PRONTO
 python3 -I /opt/minibench-net/minibench-net.py --prova check | head -40
 ```
+
+La verifica ora controlla anche che il server ACCETTI la chiave. Se dice «chiave RIFIUTATA», fermati e chiedici una
+chiave giusta: non riprovare più volte (5 tentativi sbagliati in un giorno = ban dell'indirizzo).
 
 Deve stampare un JSON con `"impronte"` (codici esadecimali: non sono i valori della macchina, sono firmati con un
 segreto che resta qui) e `"qualita"`. Se stampa un errore di rete o `401`/`403`, fermati e riporta la riga.

@@ -23,6 +23,9 @@ altre fonti. Si raccolgono solo valori casuali e non pubblici: id_locale, dmi_uu
 Uso:   minibench-net.py --demone        (il servizio: gira per sempre)
        minibench-net.py                 (un giro solo: i lavori scaduti)
        minibench-net.py --solo LAVORO   (quel lavoro adesso)   --prova LAVORO (stampa il JSON, non manda)
+       minibench-net.py --verifica [--prima] [--url URL]   bussa al server e controlla che ci sia tutto, PRIMA di
+                        installare o di accendere: root, systemd, niente container, programmi, cartelle, server, chiave.
+                        Esce con 0 se si puo' partire, 1 se no (e dice perche'). --prima: prima dell'installazione.
 """
 import concurrent.futures as cf
 import csv
@@ -41,7 +44,7 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 
-VERSIONE = "0.10"
+VERSIONE = "0.11"
 CONF, CHIAVE, STATO_DIR = "/etc/minibench-net/config.env", "/etc/minibench-net/chiave", "/var/lib/minibench-net"
 QUI = os.path.dirname(os.path.realpath(__file__))
 T = lambda: time.clock_gettime(time.CLOCK_MONOTONIC)
@@ -405,8 +408,77 @@ def battito():
     os.replace(p + ".tmp", p)
 
 
+def verifica(args):
+    """Controlli prima di partire (17/11/2026, Iacopo: «prima dei test bussa e vede se e' tutto ok, altrimenti che parte a fare»).
+    Non scrive niente e non manda misure: chiede solo /v1/salute e, se la chiave c'e', /v1/target."""
+    prima = "--prima" in args
+    esiti = []                                            # (bloccante, ok, testo)
+    def segna(ok, testo, bloccante=True):
+        esiti.append((bloccante, ok, testo))
+    segna(os.geteuid() == 0, "gira da root" if os.geteuid() == 0 else f"NON gira da root (uid {os.geteuid()}): serve root")
+    ha_systemd = bool(shutil.which("systemctl")) and os.path.isdir("/run/systemd/system")
+    segna(ha_systemd, "systemd presente" if ha_systemd else "systemd assente: il client gira come servizio systemd")
+    cont = subprocess.run(["systemd-detect-virt", "--container"], capture_output=True, text=True).stdout.strip() if shutil.which("systemd-detect-virt") else ""
+    if not cont and (os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv")):
+        cont = "docker/podman"
+    in_cont = bool(cont) and cont != "none"
+    segna(not in_cont, "non e' un container" if not in_cont else f"e' un CONTAINER ({cont}): misurerebbe un pezzo di un'altra macchina")
+    segna(sys.version_info >= (3, 9), f"python {sys.version.split()[0]}" + ("" if sys.version_info >= (3, 9) else ": serve 3.9 o piu' recente"))
+    mancano = [c for c in ("openssl", "ping", "findmnt", "ip") if not shutil.which(c)]
+    segna(not mancano, "programmi necessari presenti" if not mancano else "mancano: " + ", ".join(mancano))
+    tr = shutil.which("traceroute") or shutil.which("tracepath")
+    segna(bool(tr), "traceroute presente" if tr else "traceroute assente: i percorsi non si faranno (consigliato)", bloccante=False)
+    for d in ("/etc/minibench-net", STATO_DIR, "/opt/minibench-net"):
+        su = d if os.path.isdir(d) else os.path.dirname(d)
+        ok = os.access(su, os.W_OK)
+        segna(ok, f"{d} scrivibile" if ok else f"{d} NON scrivibile")
+    # server
+    url = args[args.index("--url") + 1] if "--url" in args else None
+    if not url:
+        for f in (CONF, os.path.join(QUI, "config.env.esempio")):
+            try:
+                url = dict(l.strip().split("=", 1) for l in open(f) if "=" in l and not l.lstrip().startswith("#")).get("MINIBENCH_NET_URL")
+            except OSError:
+                continue
+            if url and "SERVER" not in url:
+                break
+    url = (url or "").rstrip("/")
+    if not url or "SERVER" in url:
+        segna(False, "indirizzo del server non configurato (MINIBENCH_NET_URL)")
+    else:
+        try:
+            r = urllib.request.urlopen(urllib.request.Request(url + "/v1/salute", headers={"User-Agent": f"minibench-net/{VERSIONE}"}), timeout=20)
+            segna(r.status == 200, f"server raggiungibile ({url})")
+        except Exception as x:
+            segna(False, f"server NON raggiungibile ({url}): {type(x).__name__} {x}")
+    # chiave (senza mai mostrarla)
+    chiave = None
+    try:
+        chiave = open(CHIAVE).read().strip()
+        perm = oct(os.stat(CHIAVE).st_mode & 0o777)
+        segna(perm == "0o600", "chiave presente, permessi 600" if perm == "0o600" else f"chiave con permessi {perm[2:]}: devono essere 600")
+    except PermissionError:
+        segna(False, f"{CHIAVE} non leggibile")
+    except OSError:
+        segna(prima, "chiave non ancora messa (si mette dopo l'installazione)" if prima else f"manca la chiave in {CHIAVE}", bloccante=not prima)
+    if chiave and url and "SERVER" not in url:
+        cod, _ = chiama(url + "/v1/target", chiave)
+        segna(cod == 200, "chiave ACCETTATA dal server" if cod == 200 else
+              f"chiave RIFIUTATA dal server ({cod}): fermati e chiedi una chiave giusta (5 tentativi sbagliati in un giorno = ban)")
+    attivo = shutil.which("systemctl") and subprocess.run(["systemctl", "is-active", "-q", "minibench-net.service"]).returncode == 0
+    if attivo:
+        segna(not prima, "il client e' GIA' installato e acceso su questa macchina" + (": non reinstallarlo" if prima else ""), bloccante=prima)
+    for bloc, ok, testo in esiti:
+        print(("  ok   " if ok else ("  NO   " if bloc else "  nota ")) + testo)
+    blocchi = [t for b, ok, t in esiti if b and not ok]
+    print("\nPRONTO: si puo' partire." if not blocchi else f"\nFERMO: {len(blocchi)} problemi da risolvere prima di partire.")
+    return 0 if not blocchi else 1
+
+
 def main():
     args = sys.argv[1:]
+    if "--verifica" in args:
+        raise SystemExit(verifica(args))
     prova = args[args.index("--prova") + 1] if "--prova" in args else None
     solo = args[args.index("--solo") + 1] if "--solo" in args else prova
     demone = "--demone" in args
