@@ -3,7 +3,7 @@
 Client di **MiniBench Net** («Valutazione indipendente di VPS e connettività»): gira su una VPS Linux, misura
 con [minibench.sh](https://github.com/iacopo-cmd/minibench.sh) la CPU, la sottrazione di CPU da parte dell'hypervisor
 (steal) e i core effettivi, fa ping e traceroute verso punti di interscambio, registri e reti della ricerca (mai cloud
-né CDN), e manda i risultati al server di MiniBench Net. Versione 0.10.
+né CDN), e manda i risultati al server di MiniBench Net. Versione 0.15: gli orari li decide il server (test CPU fitto il primo giorno, poi ogni ora circa) e sul disco non scrive niente di continuo.
 
 - **Serve una chiave**, una per macchina, data da noi. Senza chiave il server non accetta niente.
 - **Legge soltanto**: non cambia la configurazione della macchina, non apre porte, non installa pacchetti.
